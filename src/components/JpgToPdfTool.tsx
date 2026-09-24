@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { DropZone } from './DropZone';
+import { LoadingProgressIndicator } from './LoadingProgressIndicator';
 import { formatBytes, convertJpgToPdf, triggerDownload, fetchSamplePdf } from '../services/api';
+import { addRecentFile } from '../services/recentFilesService';
 import { ImageItem, JpgToPdfOptions, ProcessingState, ProcessResult } from '../types/pdf';
 import {
   Image,
@@ -90,11 +92,24 @@ export const JpgToPdfTool: React.FC<JpgToPdfToolProps> = ({ onBack, onNavigateTo
         stepMessage: 'Optimizing and compiling images into PDF...',
       });
 
-      const res = await convertJpgToPdf(images, options, (step, percent) => {
-        setProcessing((p) => ({ ...p, stepMessage: step, progress: percent }));
-      });
+      const res = await convertJpgToPdf(
+        images.map((img) => img.file),
+        options,
+        (step, percent) => {
+          setProcessing((p) => ({ ...p, stepMessage: step, progress: percent }));
+        }
+      );
 
       setResult(res);
+      addRecentFile({
+        toolType: 'jpg-to-pdf',
+        toolName: 'JPG to PDF',
+        fileName: res.filename,
+        originalName: images.map((i) => i.name).join(', '),
+        fileSize: res.fileSize,
+        pageCount: res.pageCount,
+        downloadUrl: res.downloadUrl,
+      });
       setProcessing({
         status: 'success',
         progress: 100,
@@ -314,24 +329,23 @@ export const JpgToPdfTool: React.FC<JpgToPdfToolProps> = ({ onBack, onNavigateTo
 
           {/* In-Flight Processing Feedback */}
           {processing.status === 'processing' ? (
-            <div className="space-y-3 py-2 text-center">
-              <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                <div
-                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                  style={{ width: `${processing.progress}%` }}
-                />
-              </div>
-              <p className="text-sm font-medium text-slate-600 flex items-center justify-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                <span>{processing.stepMessage || 'Converting images to PDF...'}</span>
-              </p>
+            <div className="py-2">
+              <LoadingProgressIndicator
+                toolType="jpg-to-pdf"
+                title="Converting Images to PDF"
+                stepMessage={processing.stepMessage}
+                progress={processing.progress}
+                fileCount={images.length}
+                fileSize={images.reduce((acc, img) => acc + img.file.size, 0)}
+                onCancel={() => setImages([])}
+              />
             </div>
           ) : (
             /* Action Button */
             <button
               id="jpg-to-pdf-submit-btn"
               onClick={handleConvert}
-              className="w-full py-4 text-base font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-4 text-base font-bold text-primary-foreground bg-primary hover:bg-primary/90 active:bg-primary/80 rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <Image className="w-5 h-5" />
               <span>Convert to PDF</span>

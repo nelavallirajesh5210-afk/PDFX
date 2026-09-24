@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DropZone } from './DropZone';
+import { LoadingProgressIndicator } from './LoadingProgressIndicator';
 import {
   formatBytes,
   getPdfInfo,
@@ -396,24 +397,23 @@ export const PdfToJpgTool: React.FC<PdfToJpgToolProps> = ({ onBack, onNavigateTo
 
           {/* In-Flight Processing Feedback */}
           {processing.status === 'processing' ? (
-            <div className="space-y-3 py-2 text-center">
-              <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                <div
-                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                  style={{ width: `${processing.progress}%` }}
-                />
-              </div>
-              <p className="text-sm font-medium text-slate-600 flex items-center justify-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                <span>{processing.stepMessage || 'Converting pages to images...'}</span>
-              </p>
+            <div className="py-2">
+              <LoadingProgressIndicator
+                toolType="pdf-to-jpg"
+                title="Converting PDF to Images"
+                stepMessage={processing.stepMessage}
+                progress={processing.progress}
+                fileName={fileInfo.name}
+                fileSize={fileInfo.size}
+                onCancel={resetAll}
+              />
             </div>
           ) : (
             /* Action Button */
             <button
               id="pdf-to-jpg-submit-btn"
               onClick={handleConvert}
-              className="w-full py-4 text-base font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-4 text-base font-bold text-primary-foreground bg-primary hover:bg-primary/90 active:bg-primary/80 rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <FileImage className="w-5 h-5" />
               <span>Convert to JPG</span>

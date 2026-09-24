@@ -1,1 +1,172 @@
 @import "tailwindcss";
+
+@layer base {
+  :root {
+    --radius: 0.75rem;
+    --background: oklch(99.4% 0.002 165);
+    --foreground: oklch(18% 0.015 240);
+    --card: oklch(100% 0 0);
+    --card-foreground: oklch(18% 0.015 240);
+    --popover: oklch(100% 0 0);
+    --popover-foreground: oklch(18% 0.015 240);
+    --primary: oklch(57% 0.135 168);
+    --primary-foreground: oklch(100% 0 0);
+    --primary-soft: oklch(94.5% 0.032 166);
+    --mist: oklch(100% 0 0);
+    --line: oklch(20% 0.02 165);
+    --secondary: oklch(97% 0.006 240);
+    --secondary-foreground: oklch(20% 0.03 260);
+    --muted: oklch(96% 0.006 165);
+    --muted-foreground: oklch(50% 0.02 240);
+    --accent: oklch(94.5% 0.032 166);
+    --accent-foreground: oklch(42% 0.11 170);
+    --destructive: oklch(57.7% 0.245 27.325);
+    --destructive-foreground: oklch(98.4% 0.003 247.858);
+    --border: oklch(91% 0.008 165);
+    --input: oklch(91% 0.008 165);
+    --ring: oklch(57% 0.135 168);
+
+    --font-head: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-body: 'Figtree', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  body {
+    font-family: var(--font-body);
+    background-color: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6, .font-head {
+    font-family: var(--font-head);
+  }
+}
+
+/* Lovable specific color and styling utilities */
+.font-head {
+  font-family: var(--font-head);
+}
+
+.bg-primary {
+  background-color: var(--primary);
+}
+
+.bg-primary-soft {
+  background-color: var(--primary-soft);
+}
+
+.bg-primary-soft\/70 {
+  background-color: color-mix(in srgb, var(--primary-soft) 70%, transparent);
+}
+
+.bg-primary-soft\/35 {
+  background-color: color-mix(in srgb, var(--primary-soft) 35%, transparent);
+}
+
+.bg-primary-soft\/30 {
+  background-color: color-mix(in srgb, var(--primary-soft) 30%, transparent);
+}
+
+.bg-primary-soft\/20 {
+  background-color: color-mix(in srgb, var(--primary-soft) 20%, transparent);
+}
+
+.text-primary {
+  color: var(--primary);
+}
+
+.text-primary-foreground {
+  color: var(--primary-foreground);
+}
+
+.bg-mist {
+  background-color: var(--mist);
+}
+
+.bg-mist\/85 {
+  background-color: color-mix(in srgb, var(--mist) 85%, transparent);
+}
+
+.bg-mist\/80 {
+  background-color: color-mix(in srgb, var(--mist) 80%, transparent);
+}
+
+.bg-mist\/75 {
+  background-color: color-mix(in srgb, var(--mist) 75%, transparent);
+}
+
+.bg-mist\/70 {
+  background-color: color-mix(in srgb, var(--mist) 70%, transparent);
+}
+
+.bg-mist\/50 {
+  background-color: color-mix(in srgb, var(--mist) 50%, transparent);
+}
+
+.bg-mist\/35 {
+  background-color: color-mix(in srgb, var(--mist) 35%, transparent);
+}
+
+.text-muted-foreground {
+  color: var(--muted-foreground);
+}
+
+.border-line\/5 {
+  border-color: color-mix(in srgb, var(--line) 5%, transparent);
+}
+
+.border-line\/10 {
+  border-color: color-mix(in srgb, var(--line) 10%, transparent);
+}
+
+.ring-line\/5 {
+  --tw-ring-color: color-mix(in srgb, var(--line) 5%, transparent);
+}
+
+.border-primary\/30 {
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+.border-primary\/20 {
+  border-color: color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.border-primary\/15 {
+  border-color: color-mix(in srgb, var(--primary) 15%, transparent);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite ease-in-out;
+}
+

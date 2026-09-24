@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
+import { rateLimit } from 'express-rate-limit';
 import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
 import mammoth from 'mammoth';
@@ -12,33 +13,119 @@ import { execFile } from 'child_process';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __filename = typeof import.meta?.url === 'string' ? fileURLToPath(import.meta.url) : '';
+const __dirname = __filename ? path.dirname(__filename) : process.cwd();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+// Trust reverse proxy (nginx / Cloud Run) for accurate client IP identification
+app.set('trust proxy', 1);
+
+// ==========================================
+// CONFIGURABLE PRODUCTION SECURITY LIMITS
+// ==========================================
+export const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB maximum upload per file
+export const MAX_FILE_COUNT_STANDARD = 20;            // Max 20 files per batch upload
+export const MAX_FILE_COUNT_IMAGES = 50;              // Max 50 images for JPG-to-PDF
+export const MAX_DOCUMENT_PAGES = 500;                // Max pages per document to prevent DoS
+export const PROCESS_TIMEOUT_MS = 45000;              // 45s external sub-process timeout
+export const RATE_LIMIT_WINDOW_MS = 60 * 1000;        // 1-minute window
+export const RATE_LIMIT_GENERAL_MAX = 120;            // 120 requests/minute for general API
+export const RATE_LIMIT_HEAVY_MAX = 40;               // 40 requests/minute for heavy PDF processing
 
 // Security: In-memory storage only - never persist raw files to disk
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB maximum per file
-    files: 20, // Max 20 files per batch
+    fileSize: MAX_FILE_SIZE_BYTES,
+    files: MAX_FILE_COUNT_IMAGES,
   },
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
-// Verify %PDF- magic bytes
+// General rate limiter for all API endpoints
+const generalLimiter = rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_GENERAL_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Too many requests. Please slow down and try again shortly.',
+  },
+});
+
+// Heavy processing limiter for CPU-intensive PDF operations
+const heavyLimiter = rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_HEAVY_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Too many processing requests. Please wait a moment before trying again.',
+  },
+});
+
+app.use('/api', generalLimiter);
+
+// Verify %PDF- magic bytes (0x25 0x50 0x44 0x46 0x2d)
 function isPdfBuffer(buf: Buffer): boolean {
   if (!buf || buf.length < 5) return false;
   return buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46 && buf[4] === 0x2d;
 }
 
-// Helper: parse human page ranges (e.g. "1-3, 5, 8-10")
+// Verify image signatures (JPEG, PNG, WebP, BMP, GIF)
+function isValidImageBuffer(buf: Buffer): boolean {
+  if (!buf || buf.length < 4) return false;
+  // JPEG: FF D8 FF
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return true;
+  // PNG: 89 50 4E 47
+  if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return true;
+  // WebP: RIFF ... WEBP
+  if (
+    buf.length >= 12 &&
+    buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+    buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50
+  ) return true;
+  // BMP: 42 4D
+  if (buf[0] === 0x42 && buf[1] === 0x4d) return true;
+  // GIF: 47 49 46 38
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return true;
+  return false;
+}
+
+// Verify Word document signatures (DOCX / DOC)
+function isWordBuffer(buf: Buffer): boolean {
+  if (!buf || buf.length < 4) return false;
+  // DOCX: PK\x03\x04
+  if (buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04) return true;
+  // DOC (legacy CFBF): \xD0\xCF\x11\xE0
+  if (buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0) return true;
+  return false;
+}
+
+// Validate password string (length and character boundaries)
+function isValidPassword(password: any): { valid: boolean; error?: string } {
+  if (!password || typeof password !== 'string' || password.trim().length === 0) {
+    return { valid: false, error: 'Password is required.' };
+  }
+  if (password.length > 128) {
+    return { valid: false, error: 'Password cannot exceed 128 characters.' };
+  }
+  if (/[\x00-\x1f\x7f]/.test(password)) {
+    return { valid: false, error: 'Password contains invalid control characters.' };
+  }
+  return { valid: true };
+}
+
+// Helper: parse human page ranges (e.g. "1-3, 5, 8-10") with bounded length
 function parsePageRanges(rangesStr: string, totalPages: number): number[] {
+  if (typeof rangesStr !== 'string' || rangesStr.length > 500) {
+    return [];
+  }
   const pagesSet = new Set<number>();
-  const parts = rangesStr.split(',');
+  const parts = rangesStr.split(',').slice(0, 100);
 
   for (const part of parts) {
     const trimmed = part.trim();
@@ -106,7 +193,7 @@ app.post('/api/pdf/info', upload.single('file'), async (req: Request, res: Respo
 });
 
 // 1. MERGE PDF
-app.post('/api/pdf/merge', upload.array('files', 20), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+app.post('/api/pdf/merge', heavyLimiter, upload.array('files', MAX_FILE_COUNT_STANDARD), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const files = req.files as Express.Multer.File[];
 
@@ -129,9 +216,15 @@ app.post('/api/pdf/merge', upload.array('files', 20), async (req: Request, res: 
     for (const file of files) {
       originalTotalSize += file.size;
       const pdf = await PDFDocument.load(file.buffer, { ignoreEncryption: true });
+      totalPageCount += pdf.getPageCount();
+      if (totalPageCount > MAX_DOCUMENT_PAGES) {
+        res.status(400).json({
+          error: `Combined merged document exceeds the maximum limit of ${MAX_DOCUMENT_PAGES} pages.`,
+        });
+        return;
+      }
       const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
       copiedPages.forEach((page) => mergedPdf.addPage(page));
-      totalPageCount += pdf.getPageCount();
     }
 
     const mergedBytes = await mergedPdf.save({ useObjectStreams: true });
@@ -150,7 +243,7 @@ app.post('/api/pdf/merge', upload.array('files', 20), async (req: Request, res: 
 });
 
 // 2. SPLIT PDF
-app.post('/api/pdf/split', upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+app.post('/api/pdf/split', heavyLimiter, upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No PDF file uploaded to split.' });
@@ -170,6 +263,13 @@ app.post('/api/pdf/split', upload.single('file'), async (req: Request, res: Resp
 
     if (totalPages === 0) {
       res.status(400).json({ error: 'The PDF has 0 pages.' });
+      return;
+    }
+
+    if (totalPages > MAX_DOCUMENT_PAGES) {
+      res.status(400).json({
+        error: `Document exceeds the maximum limit of ${MAX_DOCUMENT_PAGES} pages. Please use a smaller document.`,
+      });
       return;
     }
 
@@ -402,7 +502,7 @@ function generateSamplePngBuffer(width = 420, height = 320): Buffer {
 }
 
 // 3. COMPRESS PDF
-app.post('/api/pdf/compress', upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+app.post('/api/pdf/compress', heavyLimiter, upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No PDF file uploaded to compress.' });
@@ -432,8 +532,17 @@ app.post('/api/pdf/compress', upload.single('file'), async (req: Request, res: R
       return;
     }
 
-    const rawLevel = req.body.level || 'recommended';
-    const level = (rawLevel === 'extreme' ? 'maximum' : rawLevel).toLowerCase();
+    if (pageCount > MAX_DOCUMENT_PAGES) {
+      res.status(400).json({
+        error: `Document exceeds the maximum limit of ${MAX_DOCUMENT_PAGES} pages. Please use a smaller document.`,
+      });
+      return;
+    }
+
+    const ALLOWED_COMPRESSION_LEVELS = new Set(['extreme', 'maximum', 'recommended', 'basic', 'lossless']);
+    const rawLevel = typeof req.body.level === 'string' ? req.body.level.toLowerCase().trim() : 'recommended';
+    const safeLevel = ALLOWED_COMPRESSION_LEVELS.has(rawLevel) ? rawLevel : 'recommended';
+    const level = safeLevel === 'extreme' ? 'maximum' : safeLevel;
 
     // 1. Run Ghostscript real engine optimization
     let gsBuffer: Buffer | null = null;
@@ -524,6 +633,10 @@ app.post('/api/pdf/compress', upload.single('file'), async (req: Request, res: R
 
 // Helper: Embed images into PDFDocument supporting JPG, PNG, and converting other web formats
 async function embedImageInPdf(doc: PDFDocument, buf: Buffer, filename: string): Promise<any> {
+  if (!isValidImageBuffer(buf)) {
+    throw new Error(`Unsupported image format in "${filename}". Supported formats: JPG, PNG, WEBP, BMP, GIF.`);
+  }
+
   // pdf-lib JpegEmbedder accesses dataView(imageData.buffer) without byteOffset,
   // so we clone into an isolated Uint8Array with byteOffset = 0
   const isolatedBytes = new Uint8Array(buf);
@@ -549,7 +662,7 @@ async function embedImageInPdf(doc: PDFDocument, buf: Buffer, filename: string):
         const inPath = path.join('/tmp', `pdfx_img_${tempId}`);
         const outPath = path.join('/tmp', `pdfx_img_${tempId}.png`);
         fs.writeFileSync(inPath, buf);
-        execFile('convert', [inPath, outPath], { timeout: 15000 }, async (err) => {
+        execFile('convert', [inPath, outPath], { timeout: PROCESS_TIMEOUT_MS }, async (err) => {
           try {
             if (err || !fs.existsSync(outPath)) {
               return reject(new Error(`Unable to decode image "${filename}". Supported formats: JPG, PNG, WEBP.`));
@@ -570,12 +683,26 @@ async function embedImageInPdf(doc: PDFDocument, buf: Buffer, filename: string):
 }
 
 // 4. JPG TO PDF
-app.post('/api/pdf/jpg-to-pdf', upload.array('images', 50), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+app.post('/api/pdf/jpg-to-pdf', heavyLimiter, upload.array('images', MAX_FILE_COUNT_IMAGES), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
       res.status(400).json({ error: 'Please upload at least one image file.' });
       return;
+    }
+
+    if (files.length > MAX_FILE_COUNT_IMAGES) {
+      res.status(400).json({ error: `Maximum ${MAX_FILE_COUNT_IMAGES} images allowed per batch.` });
+      return;
+    }
+
+    for (const file of files) {
+      if (!isValidImageBuffer(file.buffer)) {
+        res.status(400).json({
+          error: `Unsupported image format in "${file.originalname}". Please upload valid JPG, PNG, or WebP images.`,
+        });
+        return;
+      }
     }
 
     const pageSize = (req.body.pageSize || 'fit').toLowerCase(); // 'fit' | 'a4' | 'letter'
@@ -658,7 +785,7 @@ app.post('/api/pdf/jpg-to-pdf', upload.array('images', 50), async (req: Request,
 });
 
 // 5. PDF TO JPG
-app.post('/api/pdf/pdf-to-jpg', upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+app.post('/api/pdf/pdf-to-jpg', heavyLimiter, upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   if (!req.file) {
     res.status(400).json({ error: 'No PDF file uploaded.' });
     return;
@@ -687,6 +814,13 @@ app.post('/api/pdf/pdf-to-jpg', upload.single('file'), async (req: Request, res:
       return;
     }
     const totalPages = doc.getPageCount();
+
+    if (totalPages > MAX_DOCUMENT_PAGES) {
+      res.status(400).json({
+        error: `Document exceeds the maximum limit of ${MAX_DOCUMENT_PAGES} pages. Please use a smaller document.`,
+      });
+      return;
+    }
 
     // Check if specific pages requested
     let targetPages: number[] = [];
@@ -783,7 +917,7 @@ app.post('/api/pdf/pdf-to-jpg', upload.single('file'), async (req: Request, res:
 });
 
 // 6. ROTATE PDF PAGES
-app.post('/api/pdf/rotate', upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+app.post('/api/pdf/rotate', heavyLimiter, upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No PDF file uploaded.' });
@@ -805,12 +939,23 @@ app.post('/api/pdf/rotate', upload.single('file'), async (req: Request, res: Res
     const pages = doc.getPages();
     const totalPages = pages.length;
 
+    if (totalPages > MAX_DOCUMENT_PAGES) {
+      res.status(400).json({
+        error: `Document exceeds the maximum limit of ${MAX_DOCUMENT_PAGES} pages. Please use a smaller document.`,
+      });
+      return;
+    }
+
     let pageRotationsMap: Record<string, number> = {};
+    let hasExplicitRotations = false;
     if (req.body.pageRotations) {
       try {
         pageRotationsMap = typeof req.body.pageRotations === 'string'
           ? JSON.parse(req.body.pageRotations)
           : req.body.pageRotations;
+        if (pageRotationsMap && Object.keys(pageRotationsMap).length > 0) {
+          hasExplicitRotations = true;
+        }
       } catch {
         pageRotationsMap = {};
       }
@@ -829,7 +974,7 @@ app.post('/api/pdf/rotate', upload.single('file'), async (req: Request, res: Res
       } catch {
         targetIndices = parsePageRanges(selectedPagesStr, totalPages);
       }
-    } else {
+    } else if (!hasExplicitRotations) {
       targetIndices = pages.map((_, i) => i);
     }
 
@@ -864,7 +1009,7 @@ app.post('/api/pdf/rotate', upload.single('file'), async (req: Request, res: Res
 });
 
 // 7. DELETE PDF PAGES
-app.post('/api/pdf/delete-pages', upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+app.post('/api/pdf/delete-pages', heavyLimiter, upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No PDF file uploaded.' });
@@ -884,6 +1029,13 @@ app.post('/api/pdf/delete-pages', upload.single('file'), async (req: Request, re
     }
 
     const totalPages = doc.getPageCount();
+    if (totalPages > MAX_DOCUMENT_PAGES) {
+      res.status(400).json({
+        error: `Document exceeds the maximum limit of ${MAX_DOCUMENT_PAGES} pages. Please use a smaller document.`,
+      });
+      return;
+    }
+
     if (totalPages <= 1) {
       res.status(400).json({ error: 'Cannot delete pages from a single-page document. At least 1 page must remain.' });
       return;
@@ -937,7 +1089,7 @@ app.post('/api/pdf/delete-pages', upload.single('file'), async (req: Request, re
 });
 
 // 8. EXTRACT PDF PAGES
-app.post('/api/pdf/extract-pages', upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+app.post('/api/pdf/extract-pages', heavyLimiter, upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No PDF file uploaded.' });
@@ -957,6 +1109,13 @@ app.post('/api/pdf/extract-pages', upload.single('file'), async (req: Request, r
     }
 
     const totalPages = srcDoc.getPageCount();
+    if (totalPages > MAX_DOCUMENT_PAGES) {
+      res.status(400).json({
+        error: `Document exceeds the maximum limit of ${MAX_DOCUMENT_PAGES} pages. Please use a smaller document.`,
+      });
+      return;
+    }
+
     const rawPages = req.body.pagesToExtract;
     let pageIndices: number[] = [];
 
@@ -1020,7 +1179,7 @@ app.post('/api/pdf/extract-pages', upload.single('file'), async (req: Request, r
 });
 
 // 9. THUMBNAILS GENERATOR (for visual page preview)
-app.post('/api/pdf/thumbnails', upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+app.post('/api/pdf/thumbnails', heavyLimiter, upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   if (!req.file) {
     res.status(400).json({ error: 'No PDF file uploaded.' });
     return;
@@ -1036,6 +1195,13 @@ app.post('/api/pdf/thumbnails', upload.single('file'), async (req: Request, res:
     totalPages = doc.getPageCount();
   } catch {
     res.status(400).json({ error: 'Could not read PDF page structure.' });
+    return;
+  }
+
+  if (totalPages > MAX_DOCUMENT_PAGES) {
+    res.status(400).json({
+      error: `Document exceeds the maximum limit of ${MAX_DOCUMENT_PAGES} pages. Please use a smaller document.`,
+    });
     return;
   }
 
@@ -1110,7 +1276,7 @@ app.post('/api/pdf/thumbnails', upload.single('file'), async (req: Request, res:
 });
 
 // 10. PROTECT PDF (Password Encryption)
-app.post('/api/pdf/protect', upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+app.post('/api/pdf/protect', heavyLimiter, upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const tempId = crypto.randomUUID();
   const inPath = path.join('/tmp', `pdfx_prot_in_${tempId}.pdf`);
   const outPath = path.join('/tmp', `pdfx_prot_out_${tempId}.pdf`);
@@ -1123,19 +1289,21 @@ app.post('/api/pdf/protect', upload.single('file'), async (req: Request, res: Re
       res.status(400).json({ error: 'The uploaded file is not a valid PDF document.' });
       return;
     }
-    const password = req.body.password;
-    if (!password || typeof password !== 'string' || password.trim().length === 0) {
-      res.status(400).json({ error: 'Please enter a password to protect this document.' });
+
+    const pwdCheck = isValidPassword(req.body.password);
+    if (!pwdCheck.valid) {
+      res.status(400).json({ error: pwdCheck.error });
       return;
     }
+    const password = req.body.password.trim();
 
     fs.writeFileSync(inPath, req.file.buffer);
 
     const gsArgs = [
       '-sDEVICE=pdfwrite',
       '-dCompatibilityLevel=1.4',
-      `-sOwnerPassword=${password.trim()}`,
-      `-sUserPassword=${password.trim()}`,
+      `-sOwnerPassword=${password}`,
+      `-sUserPassword=${password}`,
       '-dNOPAUSE',
       '-dQUIET',
       '-dBATCH',
@@ -1171,7 +1339,7 @@ app.post('/api/pdf/protect', upload.single('file'), async (req: Request, res: Re
 });
 
 // 11. UNLOCK PDF (Remove Password)
-app.post('/api/pdf/unlock', upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+app.post('/api/pdf/unlock', heavyLimiter, upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const tempId = crypto.randomUUID();
   const inPath = path.join('/tmp', `pdfx_unlk_in_${tempId}.pdf`);
   const outPath = path.join('/tmp', `pdfx_unlk_out_${tempId}.pdf`);
@@ -1184,7 +1352,13 @@ app.post('/api/pdf/unlock', upload.single('file'), async (req: Request, res: Res
       res.status(400).json({ error: 'The uploaded file is not a valid PDF document.' });
       return;
     }
-    const password = (req.body.password || '').trim();
+
+    const rawPwd = req.body.password || '';
+    if (typeof rawPwd !== 'string' || rawPwd.length > 128 || /[\x00-\x1f\x7f]/.test(rawPwd)) {
+      res.status(400).json({ error: 'Password contains invalid characters or exceeds 128 characters.' });
+      return;
+    }
+    const password = rawPwd.trim();
 
     fs.writeFileSync(inPath, req.file.buffer);
 
@@ -1227,7 +1401,7 @@ app.post('/api/pdf/unlock', upload.single('file'), async (req: Request, res: Res
 });
 
 // 12. PDF TO WORD (.docx)
-app.post('/api/pdf/pdf-to-word', upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+app.post('/api/pdf/pdf-to-word', heavyLimiter, upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const tempId = crypto.randomUUID();
   const inPath = path.join('/tmp', `pdfx_p2w_in_${tempId}.pdf`);
   const txtPath = path.join('/tmp', `pdfx_p2w_txt_${tempId}.txt`);
@@ -1241,11 +1415,29 @@ app.post('/api/pdf/pdf-to-word', upload.single('file'), async (req: Request, res
       return;
     }
 
+    try {
+      const doc = await PDFDocument.load(req.file.buffer, { ignoreEncryption: false });
+      if (doc.getPageCount() > MAX_DOCUMENT_PAGES) {
+        res.status(400).json({
+          error: `Document exceeds the maximum limit of ${MAX_DOCUMENT_PAGES} pages. Please use a smaller document.`,
+        });
+        return;
+      }
+    } catch (loadErr: any) {
+      const errMsg = (loadErr?.message || '').toLowerCase();
+      if (errMsg.includes('encrypt') || errMsg.includes('password') || errMsg.includes('protected')) {
+        res.status(400).json({ error: 'This PDF is password-protected. Please unlock it before converting to Word.' });
+        return;
+      }
+      res.status(400).json({ error: 'Unable to read this PDF document.' });
+      return;
+    }
+
     fs.writeFileSync(inPath, req.file.buffer);
 
-    // Extract text layout using Ghostscript txtwrite
+    // Extract text layout using Ghostscript txtwrite safely
     await new Promise<void>((resolve, reject) => {
-      execFile('gs', ['-sDEVICE=txtwrite', '-dNOPAUSE', '-dQUIET', '-dBATCH', `-sOutputFile=${txtPath}`, inPath], (err) => {
+      execFile('gs', ['-sDEVICE=txtwrite', '-dNOPAUSE', '-dQUIET', '-dBATCH', '-dSAFER', `-sOutputFile=${txtPath}`, inPath], { timeout: PROCESS_TIMEOUT_MS }, (err) => {
         if (err) return reject(err);
         resolve();
       });
@@ -1301,10 +1493,15 @@ app.post('/api/pdf/pdf-to-word', upload.single('file'), async (req: Request, res
 });
 
 // 13. WORD TO PDF (.docx -> .pdf)
-app.post('/api/pdf/word-to-pdf', upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+app.post('/api/pdf/word-to-pdf', heavyLimiter, upload.single('file'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No Word document uploaded.' });
+      return;
+    }
+
+    if (!isWordBuffer(req.file.buffer)) {
+      res.status(400).json({ error: 'The uploaded file is not a valid Word document (.docx or .doc).' });
       return;
     }
 
@@ -1390,10 +1587,11 @@ app.post('/api/pdf/word-to-pdf', upload.single('file'), async (req: Request, res
   }
 });
 
-// Periodic temporary file cleaner: runs every 5 minutes to sweep any /tmp/pdfx_* files older than 5 minutes
-setInterval(() => {
+// Stale temporary file cleaner: sweeps any /tmp/pdfx_* files older than 5 minutes
+function cleanupStaleTempFiles() {
   try {
     const tmpDir = '/tmp';
+    if (!fs.existsSync(tmpDir)) return;
     const files = fs.readdirSync(tmpDir);
     const now = Date.now();
     const MAX_AGE_MS = 5 * 60 * 1000;
@@ -1410,7 +1608,11 @@ setInterval(() => {
       }
     }
   } catch {}
-}, 5 * 60 * 1000);
+}
+
+// Initial sweep on server start + recurring every 5 minutes
+cleanupStaleTempFiles();
+setInterval(cleanupStaleTempFiles, 5 * 60 * 1000);
 
 // 4. Sample PDF Generator (for immediate testing in UI)
 app.get('/api/pdf/sample/:type', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -1540,11 +1742,43 @@ app.get('/api/pdf/sample/:type', async (req: Request, res: Response, next: NextF
   }
 });
 
-// Error handling middleware
+// Production error handling middleware: sanitize responses and never leak stack traces
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  // Log full error details to internal server console only
   console.error('PDFX Server Error:', err);
-  res.status(err.status || 500).json({
-    error: err.message || 'An unexpected error occurred during PDF processing.',
+
+  // Handle Multer upload limits gracefully
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      res.status(413).json({
+        error: 'Your file exceeds the maximum upload limit of 50MB. Please choose a smaller file.',
+      });
+      return;
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      res.status(400).json({
+        error: 'Too many files uploaded in a single request. Maximum 20 files allowed per batch.',
+      });
+      return;
+    }
+    res.status(400).json({
+      error: 'Upload validation failed: ' + (err.message || 'Invalid upload parameters.'),
+    });
+    return;
+  }
+
+  // Handle known client-side errors (400-499)
+  const status = typeof err.status === 'number' && err.status >= 400 && err.status < 600 ? err.status : 500;
+  if (status < 500 && err.message) {
+    // Strip any internal server file paths from error messages before returning to user
+    const sanitized = String(err.message).replace(/\/tmp\/[a-zA-Z0-9_.-]+/g, '[file]');
+    res.status(status).json({ error: sanitized });
+    return;
+  }
+
+  // Sanitize internal server errors (500) - NEVER expose stack traces or server paths
+  res.status(500).json({
+    error: 'Unable to process this document. Please verify the file is not corrupted or password-protected and try again.',
   });
 });
 

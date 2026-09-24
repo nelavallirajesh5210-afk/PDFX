@@ -1,6 +1,6 @@
 {
-  "name": "PDFX - Fast, Secure Online PDF Tools",
-  "description": "Fast, private online PDF tools: Merge, Split, Compress, JPG to PDF, PDF to JPG, Rotate, Delete, and Extract pages.",
+  "name": "PDFX — Simple PDF tools. Done.",
+  "description": "Merge, compress, split, convert and organize PDF files quickly and easily with PDFX.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

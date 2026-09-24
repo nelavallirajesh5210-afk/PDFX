@@ -94,3 +94,18 @@ export interface ProcessResult {
   deletedPages?: number;
 }
 
+export interface RecentProcessedFile {
+  id: string;
+  toolType: ToolType;
+  toolName: string;
+  fileName: string;
+  originalName?: string;
+  fileSize: number;
+  originalSize?: number;
+  pageCount?: number;
+  timestamp: number;
+  downloadUrl?: string;
+  savingsPercent?: number;
+  isZip?: boolean;
+}
+

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { DropZone } from './DropZone';
+import { LoadingProgressIndicator } from './LoadingProgressIndicator';
 import { convertPdfToWord, triggerDownload, formatBytes } from '../services/api';
 import { ProcessingState, ProcessResult } from '../types/pdf';
 import {
@@ -157,31 +158,30 @@ export const PdfToWordTool: React.FC<PdfToWordToolProps> = ({ onBack }) => {
             </button>
           </div>
 
-          <div className="p-4 bg-blue-50/50 rounded-xl border border-blue-100 text-xs text-blue-900 space-y-1">
-            <p className="font-semibold">Conversion Mode: Standard Document Flow</p>
-            <p className="text-blue-700">Text content, line breaks, and paragraph hierarchy are extracted into editable Word (.docx) paragraphs.</p>
+          <div className="p-4 bg-primary-soft/60 rounded-xl border border-primary/20 text-xs text-foreground space-y-1">
+            <p className="font-semibold text-primary">Conversion Mode: Standard Document Flow</p>
+            <p className="text-muted-foreground">Text content, line breaks, and paragraph hierarchy are extracted into editable Word (.docx) paragraphs.</p>
           </div>
 
           {/* In-Flight Processing Feedback */}
           {processing.status === 'processing' || processing.status === 'uploading' ? (
-            <div className="space-y-3 py-2 text-center">
-              <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                <div
-                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                  style={{ width: `${processing.progress}%` }}
-                />
-              </div>
-              <p className="text-sm font-medium text-slate-600 flex items-center justify-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping" />
-                {processing.stepMessage || 'Converting to Word...'}
-              </p>
+            <div className="py-2">
+              <LoadingProgressIndicator
+                toolType="pdf-to-word"
+                title="Converting PDF to Word"
+                stepMessage={processing.stepMessage}
+                progress={processing.progress}
+                fileName={file.name}
+                fileSize={file.size}
+                onCancel={() => setFile(null)}
+              />
             </div>
           ) : (
             /* Primary Action Button */
             <button
               id="pdf-to-word-submit-btn"
               onClick={handleConvert}
-              className="w-full py-4 text-base font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-4 text-base font-bold text-primary-foreground bg-primary hover:bg-primary/90 active:bg-primary/80 rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <FileCode2 className="w-5 h-5" />
               <span>Convert to Word</span>

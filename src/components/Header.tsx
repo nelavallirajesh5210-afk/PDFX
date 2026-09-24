@@ -1,314 +1,226 @@
 import React, { useState } from 'react';
+import { Menu, X, Check } from 'lucide-react';
 import { ToolType } from '../types/pdf';
-import {
-  Menu,
-  X,
-  Sparkles,
-  ChevronDown,
-  Layers,
-  Scissors,
-  Minimize2,
-  FileText,
-  FileType,
-  Image,
-  FileImage,
-  Lock,
-  RotateCw,
-  Check,
-} from 'lucide-react';
 
 interface HeaderProps {
   activeTool: ToolType | null;
   onSelectTool: (tool: ToolType | null) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ activeTool, onSelectTool }) => {
+export const Header: React.FC<HeaderProps> = ({ onSelectTool }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [convertDropdownOpen, setConvertDropdownOpen] = useState(false);
-  const [showPricingModal, setShowPricingModal] = useState(false);
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [proModalOpen, setProModalOpen] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
+  const [loginSubmitted, setLoginSubmitted] = useState(false);
 
-  const handleToolClick = (tool: ToolType) => {
+  const navigateTo = (hashId: string) => {
     setMobileMenuOpen(false);
-    setConvertDropdownOpen(false);
-    onSelectTool(tool);
+    onSelectTool(null);
+    setTimeout(() => {
+      const el = document.getElementById(hashId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, 50);
   };
 
-  const handleAllToolsClick = () => {
+  const handleHomeClick = (e: React.MouseEvent) => {
+    e.preventDefault();
     setMobileMenuOpen(false);
-    setConvertDropdownOpen(false);
-    if (activeTool !== null) {
-      onSelectTool(null);
-      setTimeout(() => {
-        const el = document.getElementById('all-tools');
-        if (el) el.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-    } else {
-      const el = document.getElementById('all-tools');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    }
+    onSelectTool(null);
+    window.location.hash = '';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
     <>
-      <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
-          {/* Brand Logo */}
-          <div className="flex items-center gap-8">
+      <header className="sticky top-0 z-40 border-b border-line/10 bg-mist/95 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-3 sm:py-3.5">
+          {/* Logo matching screenshot */}
+          <button
+            onClick={handleHomeClick}
+            aria-label="PDFX home"
+            className="flex shrink-0 items-center gap-2.5 cursor-pointer text-left border-none bg-transparent"
+          >
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary font-head text-xs font-extrabold text-primary-foreground shadow-2xs">
+              PX
+            </span>
+            <span className="font-head text-xl font-bold tracking-tight text-foreground">
+              PDFX
+            </span>
+          </button>
+
+          {/* Center Navigation Links (Desktop) matching screenshot */}
+          <nav className="hidden items-center gap-1.5 md:flex">
             <button
-              id="pdfx-brand-logo"
-              onClick={() => {
-                onSelectTool(null);
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              className="flex items-center gap-2.5 group text-left cursor-pointer"
+              onClick={() => navigateTo('all-tools')}
+              className="rounded-full px-4 py-2 text-sm font-medium text-foreground/70 hover:bg-primary-soft/70 hover:text-primary transition-colors cursor-pointer"
             >
-              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-xl shadow-sm group-hover:bg-blue-700 transition-colors">
-                P
-              </div>
-              <div className="flex flex-col">
-                <span className="font-extrabold text-xl text-slate-900 tracking-tight leading-none">
-                  PDF<span className="text-blue-600">X</span>
-                </span>
-                <span className="text-[11px] font-medium text-slate-500 tracking-wide">
-                  Simple PDF Tools
-                </span>
-              </div>
+              Tools
             </button>
-
-            {/* Desktop Navigation Links */}
-            <nav className="hidden lg:flex items-center space-x-1">
-              <button
-                onClick={() => handleToolClick('merge')}
-                className={`px-3 py-2 text-sm font-semibold rounded-xl transition-colors cursor-pointer ${
-                  activeTool === 'merge'
-                    ? 'text-blue-600 bg-blue-50'
-                    : 'text-slate-700 hover:text-blue-600 hover:bg-slate-50'
-                }`}
-              >
-                Merge
-              </button>
-
-              <button
-                onClick={() => handleToolClick('split')}
-                className={`px-3 py-2 text-sm font-semibold rounded-xl transition-colors cursor-pointer ${
-                  activeTool === 'split'
-                    ? 'text-blue-600 bg-blue-50'
-                    : 'text-slate-700 hover:text-blue-600 hover:bg-slate-50'
-                }`}
-              >
-                Split
-              </button>
-
-              <button
-                onClick={() => handleToolClick('compress')}
-                className={`px-3 py-2 text-sm font-semibold rounded-xl transition-colors cursor-pointer ${
-                  activeTool === 'compress'
-                    ? 'text-blue-600 bg-blue-50'
-                    : 'text-slate-700 hover:text-blue-600 hover:bg-slate-50'
-                }`}
-              >
-                Compress
-              </button>
-
-              {/* Convert Dropdown */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setConvertDropdownOpen(!convertDropdownOpen)}
-                  className={`px-3 py-2 text-sm font-semibold rounded-xl transition-colors cursor-pointer flex items-center gap-1 ${
-                    activeTool === 'pdf-to-word' ||
-                    activeTool === 'word-to-pdf' ||
-                    activeTool === 'jpg-to-pdf' ||
-                    activeTool === 'pdf-to-jpg'
-                      ? 'text-blue-600 bg-blue-50'
-                      : 'text-slate-700 hover:text-blue-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <span>Convert</span>
-                  <ChevronDown className="w-4 h-4 text-slate-400" />
-                </button>
-
-                {convertDropdownOpen && (
-                  <div
-                    className="absolute top-full left-0 mt-2 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl p-2 z-50 animate-in fade-in slide-in-from-top-2"
-                    onMouseLeave={() => setConvertDropdownOpen(false)}
-                  >
-                    <button
-                      onClick={() => handleToolClick('pdf-to-word')}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-slate-700 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors text-left"
-                    >
-                      <FileText className="w-4 h-4 text-sky-600" />
-                      <span>PDF to Word</span>
-                    </button>
-                    <button
-                      onClick={() => handleToolClick('word-to-pdf')}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-slate-700 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors text-left"
-                    >
-                      <FileType className="w-4 h-4 text-indigo-600" />
-                      <span>Word to PDF</span>
-                    </button>
-                    <button
-                      onClick={() => handleToolClick('jpg-to-pdf')}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-slate-700 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors text-left"
-                    >
-                      <Image className="w-4 h-4 text-cyan-600" />
-                      <span>JPG to PDF</span>
-                    </button>
-                    <button
-                      onClick={() => handleToolClick('pdf-to-jpg')}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-slate-700 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors text-left"
-                    >
-                      <FileImage className="w-4 h-4 text-teal-600" />
-                      <span>PDF to JPG</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <button
-                onClick={handleAllToolsClick}
-                className="px-3 py-2 text-sm font-semibold text-slate-700 hover:text-blue-600 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
-              >
-                All Tools
-              </button>
-            </nav>
-          </div>
-
-          {/* Right Actions */}
-          <div className="hidden md:flex items-center gap-3">
             <button
-              onClick={() => setShowPricingModal(true)}
-              className="px-3.5 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+              onClick={() => navigateTo('how-it-works')}
+              className="rounded-full px-4 py-2 text-sm font-medium text-foreground/70 hover:bg-primary-soft/70 hover:text-primary transition-colors cursor-pointer"
+            >
+              How It Works
+            </button>
+            <button
+              onClick={() => navigateTo('pricing')}
+              className="rounded-full px-4 py-2 text-sm font-medium text-foreground/70 hover:bg-primary-soft/70 hover:text-primary transition-colors cursor-pointer"
             >
               Pricing
             </button>
+          </nav>
 
+          {/* Right Action Buttons matching screenshot */}
+          <div className="flex items-center gap-2">
             <button
-              id="header-cta-btn"
-              onClick={() => handleToolClick('merge')}
-              className="px-4 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              onClick={() => setLoginModalOpen(true)}
+              className="hidden sm:inline-flex h-9.5 px-4 py-2 text-sm font-semibold rounded-xl text-foreground/75 hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>Get Started</span>
-            </button>
-          </div>
-
-          {/* Mobile Hamburger Toggle */}
-          <div className="flex lg:hidden items-center gap-2">
-            <button
-              onClick={() => handleToolClick('merge')}
-              className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg"
-            >
-              Start Free
+              Log in
             </button>
             <button
-              id="mobile-menu-toggle"
+              onClick={() => navigateTo('pricing')}
+              className="hidden sm:inline-flex h-9.5 px-4.5 py-2 text-sm font-semibold rounded-xl bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 transition-all cursor-pointer"
+            >
+              Get Pro
+            </button>
+            <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              aria-label="Toggle navigation menu"
-              className="p-2 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              className="md:hidden h-10 w-10 grid place-items-center rounded-xl hover:bg-accent hover:text-foreground cursor-pointer text-foreground/75"
+              aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
             >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
           </div>
         </div>
 
-        {/* Mobile Navigation Drawer */}
+        {/* Mobile Nav Drawer */}
         {mobileMenuOpen && (
-          <div className="lg:hidden border-t border-slate-200 bg-white px-4 pt-3 pb-6 space-y-2 shadow-xl animate-in fade-in slide-in-from-top-2">
-            <div className="grid grid-cols-2 gap-2 pb-2">
+          <nav className="border-t border-line/5 px-5 py-4 md:hidden bg-mist">
+            <div className="mx-auto grid max-w-6xl gap-1">
               <button
-                onClick={() => handleToolClick('merge')}
-                className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl text-left text-sm font-bold text-slate-900 hover:bg-blue-50 hover:text-blue-600"
+                onClick={() => navigateTo('all-tools')}
+                className="text-left rounded-lg px-3 py-3 text-sm font-medium hover:bg-primary-soft text-foreground cursor-pointer"
               >
-                <Layers className="w-4 h-4 text-blue-600" />
-                <span>Merge PDF</span>
+                Tools
               </button>
               <button
-                onClick={() => handleToolClick('split')}
-                className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl text-left text-sm font-bold text-slate-900 hover:bg-blue-50 hover:text-blue-600"
+                onClick={() => navigateTo('how-it-works')}
+                className="text-left rounded-lg px-3 py-3 text-sm font-medium hover:bg-primary-soft text-foreground cursor-pointer"
               >
-                <Scissors className="w-4 h-4 text-emerald-600" />
-                <span>Split PDF</span>
+                How It Works
               </button>
               <button
-                onClick={() => handleToolClick('compress')}
-                className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl text-left text-sm font-bold text-slate-900 hover:bg-blue-50 hover:text-blue-600"
+                onClick={() => navigateTo('pricing')}
+                className="text-left rounded-lg px-3 py-3 text-sm font-medium hover:bg-primary-soft text-foreground cursor-pointer"
               >
-                <Minimize2 className="w-4 h-4 text-violet-600" />
-                <span>Compress</span>
+                Pricing
               </button>
-              <button
-                onClick={() => handleToolClick('pdf-to-word')}
-                className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl text-left text-sm font-bold text-slate-900 hover:bg-blue-50 hover:text-blue-600"
-              >
-                <FileText className="w-4 h-4 text-sky-600" />
-                <span>PDF to Word</span>
-              </button>
+              <div className="mt-3 grid grid-cols-2 gap-2 pt-2 border-t border-line/5">
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setLoginModalOpen(true);
+                  }}
+                  className="h-9 px-4 py-2 text-sm font-medium rounded-md border border-input bg-background shadow-xs hover:bg-accent text-center"
+                >
+                  Log in
+                </button>
+                <button
+                  onClick={() => navigateTo('pricing')}
+                  className="h-9 px-4 py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 text-center"
+                >
+                  Get Pro
+                </button>
+              </div>
             </div>
-
-            <button
-              onClick={handleAllToolsClick}
-              className="w-full text-left px-3 py-2.5 text-sm font-bold text-blue-600 hover:bg-blue-50 rounded-xl"
-            >
-              Browse All 12 PDF Tools →
-            </button>
-
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 px-1">
-              <span>100% Free • No Signup</span>
-              <button onClick={() => setShowPricingModal(true)} className="text-blue-600 font-semibold">
-                Pricing details
-              </button>
-            </div>
-          </div>
+          </nav>
         )}
       </header>
 
-      {/* Pricing Modal */}
-      {showPricingModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-200 relative space-y-6">
+      {/* Log In Modal */}
+      {loginModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="relative w-full max-w-md rounded-3xl border border-line/10 bg-mist p-6 shadow-xl sm:p-8">
             <button
-              onClick={() => setShowPricingModal(false)}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 transition-colors"
+              onClick={() => {
+                setLoginModalOpen(false);
+                setLoginSubmitted(false);
+              }}
+              className="absolute right-4 top-4 text-muted-foreground hover:text-foreground p-1 rounded-md"
             >
-              <X className="w-5 h-5" />
+              <X className="h-5 w-5" />
             </button>
 
-            <div className="text-center space-y-2">
-              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
-                <Sparkles className="w-6 h-6" />
-              </div>
-              <h3 className="text-2xl font-extrabold text-slate-900">100% Free Forever</h3>
-              <p className="text-sm text-slate-600">
-                PDFX is a community utility designed to provide fast, private document tools without fees or subscriptions.
-              </p>
+            <div className="flex items-center gap-2.5 mb-5">
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary font-head text-xs font-bold text-primary-foreground">
+                PX
+              </span>
+              <span className="font-head text-lg font-bold">PDFX Account</span>
             </div>
 
-            <div className="bg-blue-50/60 border border-blue-100 rounded-2xl p-4 space-y-2 text-xs text-slate-700">
-              <div className="flex items-center gap-2 font-bold text-slate-900">
-                <Check className="w-4 h-4 text-emerald-600" />
-                <span>Unlimited operations every day</span>
+            {loginSubmitted ? (
+              <div className="text-center py-4 space-y-3">
+                <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-primary-soft text-primary">
+                  <Check className="h-6 w-6" />
+                </div>
+                <h3 className="text-lg font-bold">Magic link sent!</h3>
+                <p className="text-sm text-muted-foreground">
+                  Check <span className="font-medium text-foreground">{emailInput}</span> for your sign-in link.
+                </p>
+                <button
+                  onClick={() => {
+                    setLoginModalOpen(false);
+                    setLoginSubmitted(false);
+                  }}
+                  className="mt-4 inline-flex h-9 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  Done
+                </button>
               </div>
-              <div className="flex items-center gap-2 font-bold text-slate-900">
-                <Check className="w-4 h-4 text-emerald-600" />
-                <span>No watermarks or hidden limitations</span>
-              </div>
-              <div className="flex items-center gap-2 font-bold text-slate-900">
-                <Check className="w-4 h-4 text-emerald-600" />
-                <span>Up to 50MB file size support</span>
-              </div>
-              <div className="flex items-center gap-2 font-bold text-slate-900">
-                <Check className="w-4 h-4 text-emerald-600" />
-                <span>Complete memory-only privacy</span>
-              </div>
-            </div>
+            ) : (
+              <div>
+                <h2 className="text-2xl font-bold">Welcome back</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Sign in with your email to access your PDF history and settings.
+                </p>
 
-            <button
-              onClick={() => setShowPricingModal(false)}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-xs transition-colors"
-            >
-              Got it, thanks!
-            </button>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (emailInput) setLoginSubmitted(true);
+                  }}
+                  className="mt-6 space-y-4"
+                >
+                  <div>
+                    <label className="block text-xs font-semibold uppercase text-muted-foreground mb-1.5">
+                      Email address
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      placeholder="you@example.com"
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors shadow-xs"
+                  >
+                    Send magic link
+                  </button>
+                </form>
+
+                <p className="mt-4 text-center text-xs text-muted-foreground">
+                  No account needed for basic PDF processing. 100% free.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

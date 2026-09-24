@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { DropZone } from './DropZone';
+import { LoadingProgressIndicator } from './LoadingProgressIndicator';
 import { unlockPdf, triggerDownload, formatBytes } from '../services/api';
 import { ProcessingState, ProcessResult } from '../types/pdf';
 import {
@@ -202,24 +203,23 @@ export const UnlockTool: React.FC<UnlockToolProps> = ({ onBack }) => {
 
           {/* In-Flight Processing Feedback */}
           {processing.status === 'processing' || processing.status === 'uploading' ? (
-            <div className="space-y-3 py-2 text-center">
-              <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                <div
-                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                  style={{ width: `${processing.progress}%` }}
-                />
-              </div>
-              <p className="text-sm font-medium text-slate-600 flex items-center justify-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping" />
-                {processing.stepMessage || 'Removing protection...'}
-              </p>
+            <div className="py-2">
+              <LoadingProgressIndicator
+                toolType="unlock"
+                title="Unlocking PDF Document"
+                stepMessage={processing.stepMessage}
+                progress={processing.progress}
+                fileName={file.name}
+                fileSize={file.size}
+                onCancel={() => setFile(null)}
+              />
             </div>
           ) : (
             /* Primary Action Button */
             <button
               id="unlock-submit-btn"
               onClick={handleUnlock}
-              className="w-full py-4 text-base font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-4 text-base font-bold text-primary-foreground bg-primary hover:bg-primary/90 active:bg-primary/80 rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <Unlock className="w-5 h-5" />
               <span>Unlock PDF</span>

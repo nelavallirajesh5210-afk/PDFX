@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DropZone } from './DropZone';
+import { LoadingProgressIndicator } from './LoadingProgressIndicator';
 import {
   formatBytes,
   getPdfInfo,
@@ -122,6 +123,7 @@ export const ExtractPagesTool: React.FC<ExtractPagesToolProps> = ({ onBack, onNa
       });
 
       const options: ExtractPagesOptions = {
+        pagesToExtract: selectedPages,
         pages: selectedPages,
         mode,
       };
@@ -368,17 +370,16 @@ export const ExtractPagesTool: React.FC<ExtractPagesToolProps> = ({ onBack, onNa
 
           {/* In-Flight Processing Feedback */}
           {processing.status === 'processing' ? (
-            <div className="space-y-3 py-2 text-center">
-              <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                <div
-                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                  style={{ width: `${processing.progress}%` }}
-                />
-              </div>
-              <p className="text-sm font-medium text-slate-600 flex items-center justify-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                <span>{processing.stepMessage || 'Extracting pages...'}</span>
-              </p>
+            <div className="py-2">
+              <LoadingProgressIndicator
+                toolType="extract-pages"
+                title="Extracting Pages"
+                stepMessage={processing.stepMessage}
+                progress={processing.progress}
+                fileName={fileInfo.name}
+                fileSize={fileInfo.size}
+                onCancel={resetAll}
+              />
             </div>
           ) : (
             /* Action Button */
@@ -386,7 +387,7 @@ export const ExtractPagesTool: React.FC<ExtractPagesToolProps> = ({ onBack, onNa
               id="extract-pages-submit-btn"
               onClick={handleExtract}
               disabled={selectedPages.length === 0}
-              className="w-full py-4 text-base font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 disabled:pointer-events-none rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-4 text-base font-bold text-primary-foreground bg-primary hover:bg-primary/90 active:bg-primary/80 disabled:opacity-50 disabled:pointer-events-none rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <FileText className="w-5 h-5" />
               <span>

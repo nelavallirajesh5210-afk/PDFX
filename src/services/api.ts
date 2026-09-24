@@ -403,17 +403,33 @@ export async function fetchSamplePdf(type: 'merge-1' | 'merge-2' | 'multipage' |
 
 // 5. Convert JPG / Images to PDF
 export async function convertJpgToPdf(
-  files: File[],
+  files: (File | { file: File })[],
   options: JpgToPdfOptions,
   onProgress?: (step: string, percent: number) => void
 ): Promise<ProcessResult> {
   onProgress?.('Uploading and processing images...', 30);
 
   const formData = new FormData();
-  files.forEach((f) => formData.append('images', f));
-  formData.append('pageSize', options.pageSize);
-  formData.append('orientation', options.orientation);
-  formData.append('margin', options.margin.toString());
+  let totalOriginalSize = 0;
+
+  files.forEach((item) => {
+    // Defensively ensure that an actual File/Blob is appended
+    const actualFile: File | null =
+      item instanceof File
+        ? item
+        : item && typeof item === 'object' && 'file' in item && (item as any).file instanceof File
+        ? (item as any).file
+        : null;
+
+    if (actualFile) {
+      formData.append('images', actualFile);
+      totalOriginalSize += actualFile.size || 0;
+    }
+  });
+
+  formData.append('pageSize', options.pageSize || 'fit');
+  formData.append('orientation', options.orientation || 'auto');
+  formData.append('margin', (options.margin ?? 0).toString());
 
   const response = await fetch('/api/pdf/jpg-to-pdf', {
     method: 'POST',
@@ -429,14 +445,13 @@ export async function convertJpgToPdf(
   const blob = await response.blob();
   const downloadUrl = URL.createObjectURL(blob);
   const pageCount = parseInt(response.headers.get('X-Page-Count') || files.length.toString(), 10);
-  const originalSize = files.reduce((sum, f) => sum + f.size, 0);
 
   return {
     downloadUrl,
     filename: 'pdfx_images.pdf',
     fileSize: blob.size,
     pageCount,
-    originalSize,
+    originalSize: totalOriginalSize,
     isZip: false,
   };
 }
@@ -501,16 +516,36 @@ export async function convertPdfToJpg(
 // 7. Rotate PDF Pages
 export async function rotatePdfPages(
   file: File,
-  options: RotateOptions,
+  options: RotateOptions | Record<string, number> | Record<number, number>,
   onProgress?: (step: string, percent: number) => void
 ): Promise<ProcessResult> {
   onProgress?.('Applying page rotation matrix...', 40);
 
   const formData = new FormData();
   formData.append('file', file);
-  if (options.angle) formData.append('angle', options.angle.toString());
-  if (options.selectedPages) formData.append('selectedPages', JSON.stringify(options.selectedPages));
-  if (options.pageRotations) formData.append('pageRotations', JSON.stringify(options.pageRotations));
+
+  let angle: number | undefined;
+  let selectedPages: number[] | string | undefined;
+  let pageRotations: Record<string, number> | Record<number, number> | undefined;
+
+  if (options && typeof options === 'object') {
+    if ('pageRotations' in options || 'angle' in options || 'selectedPages' in options) {
+      const opts = options as RotateOptions;
+      angle = opts.angle;
+      selectedPages = opts.selectedPages;
+      pageRotations = opts.pageRotations;
+    } else {
+      pageRotations = options as Record<string, number>;
+    }
+  }
+
+  if (angle !== undefined) formData.append('angle', angle.toString());
+  if (selectedPages !== undefined) {
+    formData.append('selectedPages', typeof selectedPages === 'string' ? selectedPages : JSON.stringify(selectedPages));
+  }
+  if (pageRotations !== undefined) {
+    formData.append('pageRotations', JSON.stringify(pageRotations));
+  }
 
   const response = await fetch('/api/pdf/rotate', {
     method: 'POST',
@@ -541,16 +576,27 @@ export async function rotatePdfPages(
 // 8. Delete PDF Pages
 export async function deletePdfPages(
   file: File,
-  options: DeletePagesOptions,
+  options: DeletePagesOptions | number[] | string,
   onProgress?: (step: string, percent: number) => void
 ): Promise<ProcessResult> {
   onProgress?.('Removing selected pages...', 40);
 
   const formData = new FormData();
   formData.append('file', file);
+
+  // Normalize: defensive compatibility for DeletePagesOptions, number[], or string
+  let targetPages: number[] | string = [];
+  if (Array.isArray(options)) {
+    targetPages = options;
+  } else if (typeof options === 'string') {
+    targetPages = options;
+  } else if (options && typeof options === 'object' && 'pagesToDelete' in options) {
+    targetPages = options.pagesToDelete;
+  }
+
   formData.append(
     'pagesToDelete',
-    Array.isArray(options.pagesToDelete) ? JSON.stringify(options.pagesToDelete) : options.pagesToDelete
+    Array.isArray(targetPages) ? JSON.stringify(targetPages) : (targetPages || '')
   );
 
   const response = await fetch('/api/pdf/delete-pages', {
@@ -592,11 +638,14 @@ export async function extractPdfPages(
 
   const formData = new FormData();
   formData.append('file', file);
+
+  // Normalize: defensive compatibility supporting options.pagesToExtract and options.pages
+  const targetPages = options.pagesToExtract ?? options.pages ?? [];
   formData.append(
     'pagesToExtract',
-    Array.isArray(options.pagesToExtract) ? JSON.stringify(options.pagesToExtract) : options.pagesToExtract
+    Array.isArray(targetPages) ? JSON.stringify(targetPages) : targetPages.toString()
   );
-  formData.append('mode', options.mode);
+  formData.append('mode', options.mode || 'single-pdf');
 
   const response = await fetch('/api/pdf/extract-pages', {
     method: 'POST',

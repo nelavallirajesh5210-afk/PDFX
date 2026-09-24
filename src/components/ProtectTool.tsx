@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { DropZone } from './DropZone';
+import { LoadingProgressIndicator } from './LoadingProgressIndicator';
 import { protectPdf, triggerDownload, formatBytes } from '../services/api';
+import { addRecentFile } from '../services/recentFilesService';
 import { ProcessingState, ProcessResult } from '../types/pdf';
 import {
   Lock,
@@ -61,6 +63,15 @@ export const ProtectTool: React.FC<ProtectToolProps> = ({ onBack }) => {
       });
 
       setResult(res);
+      addRecentFile({
+        toolType: 'protect',
+        toolName: 'Protect PDF',
+        fileName: res.filename,
+        originalName: file.name,
+        fileSize: res.fileSize,
+        pageCount: res.pageCount,
+        downloadUrl: res.downloadUrl,
+      });
       setProcessing({ status: 'success', progress: 100, stepMessage: 'Complete!' });
     } catch (err: any) {
       setProcessing({
@@ -226,24 +237,23 @@ export const ProtectTool: React.FC<ProtectToolProps> = ({ onBack }) => {
 
           {/* In-Flight Processing Feedback */}
           {processing.status === 'processing' || processing.status === 'uploading' ? (
-            <div className="space-y-3 py-2 text-center">
-              <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                <div
-                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                  style={{ width: `${processing.progress}%` }}
-                />
-              </div>
-              <p className="text-sm font-medium text-slate-600 flex items-center justify-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping" />
-                {processing.stepMessage || 'Encrypting document...'}
-              </p>
+            <div className="py-2">
+              <LoadingProgressIndicator
+                toolType="protect"
+                title="Encrypting PDF Document"
+                stepMessage={processing.stepMessage}
+                progress={processing.progress}
+                fileName={file.name}
+                fileSize={file.size}
+                onCancel={() => setFile(null)}
+              />
             </div>
           ) : (
             /* Primary Action Button */
             <button
               id="protect-submit-btn"
               onClick={handleProtect}
-              className="w-full py-4 text-base font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-4 text-base font-bold text-primary-foreground bg-primary hover:bg-primary/90 active:bg-primary/80 rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <KeyRound className="w-5 h-5" />
               <span>Protect PDF</span>

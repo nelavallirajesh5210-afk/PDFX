@@ -22,9 +22,9 @@ export const SecuritySection: React.FC = () => {
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/20">
               <Cpu className="w-5 h-5" />
             </div>
-            <h3 className="text-sm font-bold text-white">100% In-Memory Execution</h3>
+            <h3 className="text-sm font-bold text-white">Ephemeral Processing</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Files are streamed into transient RAM buffers via native Node memory streams and released by the garbage collector immediately after delivery.
+              Files are processed in transient memory buffers and isolated temporary scratch spaces that are immediately unlinked upon completion.
             </p>
           </div>
 
@@ -32,9 +32,9 @@ export const SecuritySection: React.FC = () => {
             <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/20">
               <HardDriveDownload className="w-5 h-5" />
             </div>
-            <h3 className="text-sm font-bold text-white">Zero Disk Persistence</h3>
+            <h3 className="text-sm font-bold text-white">No Permanent File Storage</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Unlike typical file converters that leave temporary artifacts in disk directories, PDFX writes zero file fragments to persistent disk storage.
+              Unlike typical file converters that retain user uploads on persistent disk volumes, PDFX immediately purges all processing artifacts.
             </p>
           </div>
 
